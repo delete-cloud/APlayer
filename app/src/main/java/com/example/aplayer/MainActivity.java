@@ -2,12 +2,16 @@ package com.example.aplayer;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import android.content.ContentUris;
 import android.content.Context;
+import android.database.Cursor;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
+import android.provider.MediaStore;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -20,6 +24,8 @@ import android.widget.Toast;
 import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -30,13 +36,17 @@ public class MainActivity extends AppCompatActivity {
     private Handler handler = new Handler();
     private Button playButton, pauseButton, showButton;
     private String[] musicFiles;
-    private String musicDirPath;
+    private String musicDirPath = Environment.getExternalStorageDirectory().getPath() + "/Music/";
     private Button prevButton, nextButton, volumeUpButton, volumeDownButton;
     private int currentVolume;
     private AudioManager audioManager;
     private int currentPosition = 0; // 用于保存和恢复播放位置
 
     private int currentSongIndex = 0; // 跟踪当前播放歌曲的索引
+
+    private List<Uri> songUris = new ArrayList<>();
+
+    private List<String> musicFilesList = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,13 +62,15 @@ public class MainActivity extends AppCompatActivity {
 
         loadMusicFiles();
 
-        // 设置ListView点击事件
         listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                playSong(musicDirPath + "/" + musicFiles[position]);
+                Uri contentUri = Uri.parse(musicFilesList.get(position));
+                playSong(contentUri);  // 使用音乐文件的Uri播放歌曲
+                currentSongIndex = position;  // 更新当前播放索引
             }
         });
+
 
         // 设置SeekBar的事件监听
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -67,14 +79,13 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (mediaPlayer != null && fromUser) {
-                    // 用户改变进度条时，跳转到特定的位置
+                    // 改变进度条时跳转到特定的位置
                     mediaPlayer.seekTo(progress * 1000);
                 }
             }
 
             @Override
             public void onStartTrackingTouch(SeekBar seekBar) {
-                // 当用户开始拖动进度条时触发
                 if (mediaPlayer != null && mediaPlayer.isPlaying()) {
                     // 如果音乐正在播放，记住这一状态并暂停播放
                     wasPlayingBeforeSeek = true;
@@ -86,7 +97,7 @@ public class MainActivity extends AppCompatActivity {
             public void onStopTrackingTouch(SeekBar seekBar) {
                 // 当用户放开进度条时触发
                 if (mediaPlayer != null && wasPlayingBeforeSeek) {
-                    // 如果音乐在用户拖动前是播放状态，则继续播放
+                    // 如果音乐在拖动前是播放状态，则继续播放
                     mediaPlayer.start();
                 }
                 wasPlayingBeforeSeek = false; // 重置标记状态
@@ -140,7 +151,6 @@ public class MainActivity extends AppCompatActivity {
         prevButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // TODO: 实现上一首歌曲的逻辑
                 prevSong();
             }
         });
@@ -149,7 +159,6 @@ public class MainActivity extends AppCompatActivity {
         nextButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // TODO: 实现下一首歌曲的逻辑
                 nextSong();
             }
         });
@@ -174,75 +183,81 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void loadMusicFiles() {
-        // 以下代码应该放在动态权限请求之后
-        musicDirPath = Environment.getExternalStorageDirectory().getPath() + "/Music/";
-        File musicDir = new File(musicDirPath);
-        musicFiles = musicDir.list(new FilenameFilter() {
-            public boolean accept(File dir, String name) {
-                return name.endsWith(".mp3") || name.endsWith(".wav");
-            }
-        });
+        // 定义要查询的列
+        String[] projection = new String[]{
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.TITLE
+        };
 
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, musicFiles);
-        listView.setAdapter(adapter);
+        // 查询条件，只选择音乐文件
+        String selection = MediaStore.Audio.Media.IS_MUSIC + " != 0";
+
+        // 初始化音乐标题列表
+        List<String> titlesList = new ArrayList<>();
+
+        // 查询外部存储的音频文件
+        try (Cursor cursor = getContentResolver().query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                null,
+                MediaStore.Audio.Media.TITLE + " ASC" // 按标题排序
+        )) {
+            // 遍历查询结果
+            if (cursor != null && cursor.moveToFirst()) {
+                int titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE);
+
+                do {
+                    String title = cursor.getString(titleColumn);
+                    titlesList.add(title); // 添加标题到列表
+                } while (cursor.moveToNext());
+            }
+
+            // 使用 ArrayAdapter 将音乐标题加载到 ListView
+            ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                    this,
+                    android.R.layout.simple_list_item_1,
+                    titlesList
+            );
+            listView.setAdapter(adapter);
+
+        } catch (SecurityException e) {
+            // 没有读取权限的异常处理
+            Toast.makeText(this, "读取外部存储权限被拒绝！", Toast.LENGTH_SHORT).show();
+        }
     }
 
-    private void playSong(String path) {
+
+    private void playSong(Uri songUri) {
         if (mediaPlayer != null) {
             mediaPlayer.stop();
             mediaPlayer.release();
         }
-        mediaPlayer = new MediaPlayer();
-        try {
-            mediaPlayer.setDataSource(path);
-            mediaPlayer.prepare();
-            mediaPlayer.start();
+        mediaPlayer = MediaPlayer.create(this, songUri);
+        mediaPlayer.start();
+        playingSongTextView.setText(songUri.toString());  // 显示当前播放的歌曲
+        System.out.println(songUri.toString() + " is playing");
 
-            playingSongTextView.setText(new File(path).getName());
-            seekBar.setMax(mediaPlayer.getDuration() / 1000);
-
-            updateSeekBar(); // 开始更新SeekBar
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        // 更新SeekBar的进度
+        seekBar.setMax(mediaPlayer.getDuration() / 1000);
+        updateSeekBar();
     }
 
-    private void updateSeekBar() {
-        if (mediaPlayer != null) {
-            int mCurrentPosition = mediaPlayer.getCurrentPosition() / 1000;
-            seekBar.setProgress(mCurrentPosition);
-            handler.postDelayed(updateSeekBar, 1000);
-        }
-    }
-
-    private Runnable updateSeekBar = new Runnable() {
-        @Override
-        public void run() {
-            updateSeekBar();
-        }
-    };
-
-    // 播放上一首歌曲的方法
     private void prevSong() {
-        if (musicFiles.length > 0) {
-            // 计算上一首歌曲的索引
-            currentSongIndex = (currentSongIndex - 1 + musicFiles.length) % musicFiles.length;
-            // 播放选中的歌曲
-            playSong(musicDirPath + "/" + musicFiles[currentSongIndex]);
+        if (!songUris.isEmpty()) {
+            currentSongIndex = (currentSongIndex - 1 + songUris.size()) % songUris.size();
+            playSong(songUris.get(currentSongIndex));
         } else {
-            Toast.makeText(MainActivity.this, "音乐列表为空", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "音乐列表为空", Toast.LENGTH_SHORT).show();
         }
     }
 
-    // 播放下一首歌曲的方法
     private void nextSong() {
-        if (musicFiles.length > 0) {
-            // 计算下一首歌曲的索引
-            currentSongIndex = (currentSongIndex + 1) % musicFiles.length;
-            // 播放选中的歌曲
-            playSong(musicDirPath + "/" + musicFiles[currentSongIndex]);
+        if (!songUris.isEmpty()) {
+            currentSongIndex = (currentSongIndex + 1) % songUris.size();
+            playSong(songUris.get(currentSongIndex));
         } else {
-            Toast.makeText(MainActivity.this, "音乐列表为空", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "音乐列表为空", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -258,6 +273,18 @@ public class MainActivity extends AppCompatActivity {
 
         // 设置音量
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, currentVolume, AudioManager.FLAG_SHOW_UI);
+    }
+
+    private void updateSeekBar() {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (mediaPlayer != null && mediaPlayer.isPlaying()) {
+                    seekBar.setProgress(mediaPlayer.getCurrentPosition() / 1000);
+                    handler.postDelayed(this, 1000);
+                }
+            }
+        });
     }
 
     @Override
@@ -286,6 +313,5 @@ public class MainActivity extends AppCompatActivity {
             mediaPlayer.release();
             mediaPlayer = null;
         }
-        handler.removeCallbacks(updateSeekBar); // 防止内存泄露
     }
 }

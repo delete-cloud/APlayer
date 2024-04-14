@@ -114,7 +114,6 @@
         android:id="@+id/infoText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="底部信息栏"
         android:gravity="center"
         android:layout_alignParentBottom="true"/>
 
