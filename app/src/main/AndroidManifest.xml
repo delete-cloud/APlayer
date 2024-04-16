@@ -2,6 +2,28 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- 给予存储权限  -->
+<!--    &lt;!&ndash; Required only if your app needs to access images or photos-->
+<!--         that other apps created. &ndash;&gt;-->
+<!--    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />-->
+
+<!--    &lt;!&ndash; Required only if your app needs to access videos-->
+<!--         that other apps created. &ndash;&gt;-->
+<!--    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />-->
+
+<!--    &lt;!&ndash; Required only if your app needs to access audio files-->
+<!--         that other apps created. &ndash;&gt;-->
+<!--    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />-->
+
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
+
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -12,7 +34,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.APlayer"
         android:requestLegacyExternalStorage="true"
-        tools:targetApi="31">
+        >
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -23,22 +45,5 @@
             </intent-filter>
         </activity>
     </application>
-
-    <!-- 给予存储权限  -->
-    <!-- Required only if your app needs to access images or photos
-         that other apps created. -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-
-    <!-- Required only if your app needs to access videos
-         that other apps created. -->
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-
-    <!-- Required only if your app needs to access audio files
-         that other apps created. -->
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
-
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
 
 </manifest>

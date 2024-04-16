@@ -12,6 +12,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -65,11 +66,13 @@ public class MainActivity extends AppCompatActivity {
         listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                Uri contentUri = Uri.parse(musicFilesList.get(position));
+                Uri contentUri = songUris.get(position);  // 获取对应位置的歌曲URI
                 playSong(contentUri);  // 使用音乐文件的Uri播放歌曲
                 currentSongIndex = position;  // 更新当前播放索引
+                playingSongTextView.setText(musicFilesList.get(position));  // 显示当前播放的歌曲信息
             }
         });
+
 
 
         // 设置SeekBar的事件监听
@@ -183,49 +186,72 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void loadMusicFiles() {
-        // 定义要查询的列
-        String[] projection = new String[]{
+        // 需要查询的媒体信息列
+        String[] projection = {
                 MediaStore.Audio.Media._ID,
-                MediaStore.Audio.Media.TITLE
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.ALBUM,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.DATA,
+                MediaStore.Audio.Media.DURATION,
+                MediaStore.Audio.Media.SIZE
         };
 
-        // 查询条件，只选择音乐文件
+        // 选择条件，只加载音乐文件
         String selection = MediaStore.Audio.Media.IS_MUSIC + " != 0";
 
-        // 初始化音乐标题列表
-        List<String> titlesList = new ArrayList<>();
+        // 清除之前的列表以避免重复条目
+        musicFilesList.clear();
+        songUris.clear();
 
-        // 查询外部存储的音频文件
+        // 查询外部媒体内容URI
         try (Cursor cursor = getContentResolver().query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 projection,
                 selection,
                 null,
-                MediaStore.Audio.Media.TITLE + " ASC" // 按标题排序
-        )) {
-            // 遍历查询结果
-            if (cursor != null && cursor.moveToFirst()) {
-                int titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE);
+                MediaStore.Audio.Media.TITLE + " ASC")) {  // 根据标题排序
 
+            if (cursor != null && cursor.moveToFirst()) {
                 do {
-                    String title = cursor.getString(titleColumn);
-                    titlesList.add(title); // 添加标题到列表
+                    int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
+                    int titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE);
+                    int albumColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM);
+                    int artistColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST);
+                    int dataColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA);
+                    int durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION);
+                    int sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE);
+
+                    // 构建当前文件的内容URI
+                    Uri contentUri = ContentUris.withAppendedId(
+                            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                            cursor.getLong(idColumn));
+
+                    // 将URI和标题添加到列表中
+                    songUris.add(contentUri);
+                    String fileInfo = "标题: " + cursor.getString(titleColumn) +
+                            ", 专辑: " + cursor.getString(albumColumn) +
+                            ", 艺术家: " + cursor.getString(artistColumn) +
+                            ", 持续时间: " + cursor.getLong(durationColumn)/1000 + " 秒";
+                    musicFilesList.add(fileInfo);
+
                 } while (cursor.moveToNext());
             }
-
-            // 使用 ArrayAdapter 将音乐标题加载到 ListView
-            ArrayAdapter<String> adapter = new ArrayAdapter<>(
-                    this,
-                    android.R.layout.simple_list_item_1,
-                    titlesList
-            );
-            listView.setAdapter(adapter);
-
         } catch (SecurityException e) {
-            // 没有读取权限的异常处理
-            Toast.makeText(this, "读取外部存储权限被拒绝！", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "访问媒体文件被拒绝", Toast.LENGTH_SHORT).show();
         }
+
+        // 为ListView设置适配器
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                this,
+                android.R.layout.simple_list_item_1,
+                musicFilesList
+        );
+        listView.setAdapter(adapter);
     }
+
+
+
 
 
     private void playSong(Uri songUri) {
@@ -234,19 +260,33 @@ public class MainActivity extends AppCompatActivity {
             mediaPlayer.release();
         }
         mediaPlayer = MediaPlayer.create(this, songUri);
+        if (mediaPlayer == null) {
+            Toast.makeText(this, "播放此歌曲出错", Toast.LENGTH_SHORT).show();
+            return;
+        }
         mediaPlayer.start();
-        playingSongTextView.setText(songUri.toString());  // 显示当前播放的歌曲
-        System.out.println(songUri.toString() + " is playing");
+        mediaPlayer.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+            @Override
+            public void onCompletion(MediaPlayer mp) {
+                nextSong();  // 歌曲播放完毕自动播放下一首
+            }
+        });
 
-        // 更新SeekBar的进度
+        // 更新正在播放歌曲的TextView
+        playingSongTextView.setText(musicFilesList.get(currentSongIndex));
+
+        // 更新SeekBar的进度和最大值
         seekBar.setMax(mediaPlayer.getDuration() / 1000);
         updateSeekBar();
     }
+
+
 
     private void prevSong() {
         if (!songUris.isEmpty()) {
             currentSongIndex = (currentSongIndex - 1 + songUris.size()) % songUris.size();
             playSong(songUris.get(currentSongIndex));
+            playingSongTextView.setText(musicFilesList.get(currentSongIndex));  // 更新正在播放歌曲的信息
         } else {
             Toast.makeText(this, "音乐列表为空", Toast.LENGTH_SHORT).show();
         }
@@ -256,10 +296,12 @@ public class MainActivity extends AppCompatActivity {
         if (!songUris.isEmpty()) {
             currentSongIndex = (currentSongIndex + 1) % songUris.size();
             playSong(songUris.get(currentSongIndex));
+            playingSongTextView.setText(musicFilesList.get(currentSongIndex));  // 更新正在播放歌曲的信息
         } else {
             Toast.makeText(this, "音乐列表为空", Toast.LENGTH_SHORT).show();
         }
     }
+
 
     // 调整音量的方法
     private void adjustVolume(boolean increase) {
